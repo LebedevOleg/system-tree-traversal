@@ -135,7 +135,7 @@ func WalkPath(file *os.File, path string) error {
 }
 
 func main() {
-	path := "H:/"                                                                   // Записываем путь к интерисующей дериктории
+	path := "E:/"                                                                   // Записываем путь к интерисующей дериктории
 	file, err := os.OpenFile("test.txt", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600) // открываем файл для записи
 	if err != nil {
 		panic(err)
@@ -151,17 +151,22 @@ func main() {
 	t6 := time.Now()
 	fmt.Println(t6.Sub(t5))
 	//---------------------------Попытка в асинхронный обход
-	t7 := time.Now()
+	/* t7 := time.Now()
 	fmt.Println(t7)
 	err = WalkAsync(file, path, 100)
 	if err != nil {
 		panic(err)
 	}
 	t8 := time.Now()
-	fmt.Println(t8.Sub(t7))
+	fmt.Println(t8.Sub(t7)) */
 	//! Всего файлов в моем HDD набралось 215506
-	//! среднее время работы:
-	//! windows -
-	//! linux -
+	//! время работы последовательного метода:
+	//! windows - 2.23 - 2.25 мин.
+	//! linux - 1.54 - 2.54 мин.
+	//! время работы асинхронного метода:
+	//! windows - 2.37 - 2.15 мин.
+	//! linux - 1.14 - 3.56 мин.
+	//! Каждый раз перед запуском нового теста HDD отключался от компьютера
+	//! Тесты запускались отдельно друг от друга
 	return
 }
