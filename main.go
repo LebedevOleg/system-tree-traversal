@@ -102,11 +102,14 @@ func walkDir(dir string, fileChan chan<- string, wg *sync.WaitGroup, workChan ch
 func WalkPath(file *os.File, path string) error {
 	dataChan := make(chan string)
 	var wg sync.WaitGroup
+	limit := time.Tick(time.Millisecond * 10) // промежуто для остановки перед записью и перед переходом к следующему файлу
+
 	// аналогично Асинхронному методу создаем горктины на запись
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 1; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			<-limit
 			for fileData := range dataChan {
 				_, err := file.WriteString(fileData)
 				if err != nil {
@@ -134,14 +137,105 @@ func WalkPath(file *os.File, path string) error {
 	return nil
 }
 
+// Функция с Последовательным обходом файлов дериктории
+// file - файл в который будет вестись запись,
+// path - путь к дериктории которую будем обходить
+// maxProcLimit - максимальное колличество запускаемых горутин
+func WalkPathStop(file *os.File, path string, maxProcLimit int) error {
+	var wg sync.WaitGroup                        // необходимо для ожидания выполнения всех горутин
+	maxProc := make(chan struct{}, maxProcLimit) // максимальное колличество запускаемых горутин
+	limit := time.Tick(time.Nanosecond * 5)      // промежуто для остановки перед записью и перед переходом к следующему файлу
+	var dataChan = make(chan string, 300)        // канал для передачи данных о файле
+
+	// функция для записи в файл
+	writer := func() {
+		defer wg.Done()
+		for data := range dataChan {
+			<-limit
+			_, err := file.WriteString(data)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+	}
+	// запускаем много, чтобы выполнение долго не простаивало
+	for i := 0.0; i < 290; i++ {
+		<-limit
+		wg.Add(1)
+		go writer()
+	}
+
+	// ф-ция для обхода по файлам
+	var wg2 sync.WaitGroup // необходимо для ожидания выполнения всех горутин
+	var travelDir func(string)
+	travelDir = func(dir string) {
+		defer wg2.Done()
+
+		dirFiles, err := os.Open(dir) // открываем дерикторию
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer dirFiles.Close()
+		fileInfos, err := dirFiles.Readdir(0) // считываем все файлы из дериктории
+		if err != nil {
+			log.Fatal(err)
+		}
+		for _, fileInfo := range fileInfos {
+			//* приостановка выполнения, полагаю можно без нее, но не уверен
+			if fileInfo.Name() == "System Volume Information" { //игонрирование системного файла
+				continue
+			}
+			// если рассматриваемый объект является папкой
+			if fileInfo.IsDir() {
+				nextPath := filepath.Join(dir, fileInfo.Name())
+				wg2.Add(1)
+				// проверяем переполнен ли пул рабочих
+				if len(maxProc) == cap(maxProc) {
+					travelDir(nextPath)
+					continue
+				}
+				<-limit
+				// если не переполнен то делаем новую горутину
+				go travelDir(nextPath)
+				continue
+			}
+			dataChan <- dir + "; " + fileInfo.Name() + "; " + strconv.FormatInt(fileInfo.Size(), 10) + "\n"
+		}
+		// освобождение места под новые горутины
+		select {
+		case <-maxProc:
+			return
+		default:
+			return
+		}
+	}
+	wg2.Add(1)
+	go travelDir(path)
+
+	wg2.Wait()
+	close(dataChan)
+	wg.Wait()
+	return nil
+}
+
 func main() {
-	path := "E:/"                                                                   // Записываем путь к интерисующей дериктории
-	file, err := os.OpenFile("test.txt", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600) // открываем файл для записи
+	path := "H:/"                                                                      // Записываем путь к интерисующей дериктории
+	file, err := os.OpenFile("H:/test.txt", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600) // открываем файл для записи
 	if err != nil {
 		panic(err)
 	}
 	defer file.Close()
+	//---------------------------Обход с остановками
+	t3 := time.Now()
+	fmt.Println(t3)
+	err = WalkPathStop(file, path, 5000)
+	if err != nil {
+		panic(err)
+	}
+	t4 := time.Now()
+	fmt.Println(t4.Sub(t3))
 	//---------------------------Последовательный обход
+	/* runtime.GOMAXPROCS(5)
 	t5 := time.Now()
 	fmt.Println(t5)
 	err = WalkPath(file, path)
@@ -149,7 +243,7 @@ func main() {
 		panic(err)
 	}
 	t6 := time.Now()
-	fmt.Println(t6.Sub(t5))
+	fmt.Println(t6.Sub(t5)) */
 	//---------------------------Попытка в асинхронный обход
 	/* t7 := time.Now()
 	fmt.Println(t7)
