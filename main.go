@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -9,8 +10,24 @@ import (
 )
 
 func WalkWithOutRecursion(file *os.File, path string) error {
-	stack := []string{path}              //стэк папок
-	limit := time.Tick(time.Millisecond) // промежуто для остановки перед записью
+	dataChan := make(chan string, 10)
+	folderTick := time.Tick(time.Nanosecond * 1) // промежуто для остановки перед записью
+	//writeTick := time.Tick(time.Nanosecond * 1)  // промежуто для остановки перед записью
+
+	writer := func() {
+		for textLine := range dataChan {
+			//<-writeTick
+			_, err := file.WriteString(textLine)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+	}
+	for i := 0; i < 10; i++ {
+		go writer()
+	}
+
+	stack := []string{path} //стэк папок
 	// Пока стэк не пустой, достаем из него папку и проходим по ней
 	for len(stack) > 0 {
 		dirPath := stack[len(stack)-1]
@@ -35,21 +52,25 @@ func WalkWithOutRecursion(file *os.File, path string) error {
 				continue
 			}
 			if fileInfo.IsDir() {
+				<-folderTick
 				nextPath := filepath.Join(dirPath, fileInfo.Name())
 				stack = append(stack, nextPath)
 				continue
 			}
-			<-limit //лимит перед записью в 10ms
-			_, err := file.WriteString(dirPath + "; " + fileInfo.Name() + "; " + strconv.FormatInt(fileInfo.Size(), 10) + "\n")
+
+			dataChan <- dirPath + "; " + fileInfo.Name() + "; " + strconv.FormatInt(fileInfo.Size(), 10) + "\n"
+			//<-limit //лимит перед записью в 10ms
+			/* _, err := file.WriteString(dirPath + "; " + fileInfo.Name() + "; " + strconv.FormatInt(fileInfo.Size(), 10) + "\n")
 			if err != nil {
 				return err
-			}
+			} */
 		}
 	}
+	close(dataChan)
 	return nil
 }
 func main() {
-	path := `C:\Users\lebed` // Записываем путь к интересующей дериктории
+	path := `H:\` // Записываем путь к интересующей дериктории
 	//path := `C:\Program Files (x86)\Steam` // Записываем путь к интересующей дериктории
 	//path := `/media/tiltamen/66666FD8666FA80F/Users/lebed`
 	//path := `/media/tiltamen/66666FD8666FA80F/Windows`
